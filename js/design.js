@@ -1,6 +1,6 @@
 // 번호 도안 엔진
 // 색 인덱스 지도(그리드) → 영역 분리 · 잔조각 병합 → 벡터 선화 + 번호 위치
-import { hexRgb } from './paper.js?v=4';
+import { hexRgb } from './paper.js?v=8';
 
 export const DETAIL = [
   { grid: 480, k: 10, minFrac: 0.0010 },

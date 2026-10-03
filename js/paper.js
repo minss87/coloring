@@ -80,11 +80,14 @@ export function pencilPatterns(ctx, hex, scale, levels = 6) {
   const pats = [];
   for (let L = 0; L < levels; L++) {
     const p = (L + 1) / levels;               // 0..1 압력
-    const thr = 0.84 - p * 0.68;              // 높은 압력 → 골짜기까지 묻음
+    // 봉우리는 금방 꽉 차고, 압력이 오를수록 골짜기까지 색이 내려앉음
+    const thr = 0.74 - p * 0.56;
+    const floor = Math.max(0, p - .55) * .45;  // 세게 누르면 골짜기도 일정량 채움
     const cv = document.createElement('canvas'); cv.width = cv.height = size;
     const c = cv.getContext('2d'), im = c.createImageData(size, size), d = im.data;
     for (let i = 0; i < tooth.length; i++) {
-      const a = Math.max(0, Math.min(1, (tooth[i] - thr) / 0.22));
+      const g = Math.max(0, Math.min(1, (tooth[i] - thr) / 0.18));
+      const a = floor + (1 - floor) * g * g * (3 - 2 * g);
       d[i * 4] = r; d[i * 4 + 1] = g; d[i * 4 + 2] = b; d[i * 4 + 3] = a * 255;
     }
     c.putImageData(im, 0, 0);

@@ -1,12 +1,13 @@
 // 드로잉 엔진: 스탬프 방식 브러시 + 획 단위 되돌리기
-import { pencilPatterns, blotPattern, hexRgb } from './paper.js?v=4';
+import { pencilPatterns, blotPattern, hexRgb } from './paper.js?v=8';
 
-export const BRUSHES = [['pencil', '색연필'], ['oil', '유화'], ['marker', '마커'], ['wc', '수채화'], ['eraser', '지우개']];
+export const BRUSHES = [['pencil', '색연필'], ['oil', '유화'], ['marker', '마커'], ['fine', '세필 마커'], ['wc', '수채화'], ['eraser', '지우개']];
 
 const CFG = {
-  pencil: { mul: .5,  spacing: .16, blend: 'multiply', alpha: 1 },
+  pencil: { mul: .5,  spacing: .12, blend: 'multiply', alpha: 1 },
   oil:    { mul: 1.0, spacing: .09, blend: 'normal',   alpha: 1 },
   marker: { mul: 1.0, spacing: .08, blend: 'multiply', alpha: .6 },
+  fine:   { mul: .28, spacing: .1,  blend: 'normal',   alpha: 1 },
   wc:     { mul: 1.5, spacing: .1,  blend: 'multiply', alpha: .62 },
   eraser: { mul: 1.0, spacing: .12 },
 };
@@ -88,8 +89,8 @@ export class Painter {
   autoPressure(p, isPen, brush) {
     if (brush === 'pencil') {
       // 색연필: 필압을 제대로 반영 (살살 → 연하고 가늘게, 꾹 → 진하고 굵게)
-      if (!isPen || !(p > 0)) return .6;
-      return Math.min(1, .06 + .94 * Math.pow(Math.min(1, p / .85), .85));
+      if (!isPen || !(p > 0)) return .62;
+      return Math.min(1, .12 + .88 * Math.min(1, p / .9));
     }
     // 나머지: 살짝만 반영 → 대부분 0.75~1 사이로 안정
     if (!isPen || !(p > 0)) return .82;
@@ -126,6 +127,7 @@ export class Painter {
       case 'pencil': return base * (.5 + .5 * s.ps) * taper;
       case 'oil': return base * (.72 + .28 * s.ps) * Math.min(1, .7 + .3 * taper);
       case 'marker': return base * Math.min(1, .85 + .15 * taper);
+      case 'fine': return base * (.8 + .2 * s.ps) * Math.min(1, .55 + .45 * taper);
       case 'wc': return base * (.7 + .3 * s.ps) * taper;
       default: return base;
     }
@@ -140,7 +142,7 @@ export class Painter {
     switch (s.brush) {
       case 'pencil': {
         const lv = Math.max(0, Math.min(s.pats.length - 1, Math.round(s.ps * (s.pats.length - 1))));
-        c.globalAlpha = .1 + .32 * s.ps; c.fillStyle = s.pats[lv];
+        c.globalAlpha = .28 + .42 * s.ps; c.fillStyle = s.pats[lv];
         c.beginPath(); c.arc(x, y, r, 0, Math.PI * 2); c.fill();
         break;
       }
@@ -150,6 +152,11 @@ export class Painter {
           c.fillStyle = b.c;
           c.beginPath(); c.arc(x + px * b.o * r, y + py * b.o * r, br * b.w, 0, Math.PI * 2); c.fill();
         }
+        break;
+      }
+      case 'fine': {
+        c.fillStyle = s.color;
+        c.beginPath(); c.arc(x, y, r, 0, Math.PI * 2); c.fill();
         break;
       }
       case 'marker': {
@@ -202,6 +209,25 @@ export class Painter {
   commit(s, bx, by, bw, bh) {
     const p = this.pc, cfg = CFG[s.brush];
     const comp = cfg.blend === 'multiply' ? 'multiply' : 'source-over';
+    if (s.brush === 'fine') {
+      // 같은 색끼리는 겹쳐도 진해지지 않음: 같은 색 위에서는 더 진한 쪽만 남김
+      const src = this.lc.getImageData(bx, by, bw, bh).data;
+      const im = p.getImageData(bx, by, bw, bh), dst = im.data;
+      const [R, G, B] = hexRgb(s.color), op = s.op;
+      for (let i = 0; i < src.length; i += 4) {
+        const sa = src[i + 3] / 255 * op; if (sa <= 0) continue;
+        const da = dst[i + 3] / 255;
+        const same = da > 0 && Math.abs(dst[i] - R) + Math.abs(dst[i + 1] - G) + Math.abs(dst[i + 2] - B) < 24;
+        if (same || da === 0) { dst[i] = R; dst[i + 1] = G; dst[i + 2] = B; dst[i + 3] = Math.max(dst[i + 3], sa * 255); }
+        else {
+          const oa = sa + da * (1 - sa);
+          dst[i] = (R * sa + dst[i] * da * (1 - sa)) / oa; dst[i + 1] = (G * sa + dst[i + 1] * da * (1 - sa)) / oa; dst[i + 2] = (B * sa + dst[i + 2] * da * (1 - sa)) / oa;
+          dst[i + 3] = oa * 255;
+        }
+      }
+      p.putImageData(im, bx, by);
+      return;
+    }
     if (s.brush === 'wc') {
       // 얼룩진 본체 + 가장자리 물자국
       const body = document.createElement('canvas'); body.width = bw; body.height = bh;

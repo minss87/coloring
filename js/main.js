@@ -1,8 +1,8 @@
-import { paper, TILE } from './paper.js?v=4';
-import { Painter, BRUSHES, diameter } from './engine.js?v=4';
-import { sceneDesign, imageToDesign, hexLum } from './design.js?v=4';
-import * as store from './storage.js?v=4';
-import { generateImage, DEFAULT_MODEL } from './ai.js?v=4';
+import { paper, TILE } from './paper.js?v=8';
+import { Painter, BRUSHES, diameter } from './engine.js?v=8';
+import { sceneDesign, imageToDesign, hexLum } from './design.js?v=8';
+import * as store from './storage.js?v=8';
+import { generateImage, DEFAULT_MODEL } from './ai.js?v=8';
 
 const $ = id => document.getElementById(id);
 const sheet = $('sheet'), world = $('world'), paintCv = $('paint'), liveCv = $('live'), svg = $('lineart');
@@ -146,6 +146,7 @@ const color = () => st.design.palette[st.num - 1];
 const SW = {
   pencil: c => `<path d="M6 18 C14 6 22 22 30 12 S40 8 44 10" fill="none" stroke="${c}" stroke-width="5" stroke-linecap="round" stroke-dasharray="1.2 1.6" opacity=".9"/><path d="M6 18 C14 6 22 22 30 12 S40 8 44 10" fill="none" stroke="${c}" stroke-width="3" stroke-linecap="round" opacity=".7"/>`,
   oil: c => `<path d="M6 15 C16 9 28 19 44 12" fill="none" stroke="${c}" stroke-width="11" stroke-linecap="round"/><path d="M8 12.5 C17 7.5 28 16 42 9.5" fill="none" stroke="#fff" stroke-width="2" stroke-linecap="round" opacity=".5"/><path d="M8 17.5 C18 12 28 21 42 14.5" fill="none" stroke="#000" stroke-width="1.6" stroke-linecap="round" opacity=".18"/>`,
+  fine: c => `<path d="M6 17 C14 8 22 20 30 11 S40 9 44 10" fill="none" stroke="${c}" stroke-width="2.6" stroke-linecap="round"/><path d="M10 19 C18 12 26 22 40 15" fill="none" stroke="${c}" stroke-width="2.6" stroke-linecap="round"/>`,
   marker: c => `<path d="M6 16 L44 12" fill="none" stroke="${c}" stroke-width="9" stroke-linecap="round" opacity=".6"/><path d="M14 17 L36 13" fill="none" stroke="${c}" stroke-width="9" stroke-linecap="round" opacity=".45"/>`,
   wc: c => `<path d="M7 13 C14 5 24 9 31 7 S45 10 43 16 S30 21 22 19 S5 20 7 13Z" fill="${c}" opacity=".35" stroke="${c}" stroke-width="1.6" stroke-opacity=".9"/><circle cx="19" cy="12" r="3.5" fill="${c}" opacity=".3"/>`,
   eraser: () => `<g transform="translate(13 1)" fill="none" stroke="#5C5F66" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M16 3 21 8 10 19H5v-5z"/><path d="m11 8 5 5"/><path d="M14 21h7"/></g>`,
@@ -297,6 +298,8 @@ function showHover(e) {
     else if (st.brush === 'oil') {
       let t = ''; for (let i = 0; i < 10; i++) { const a = i * Math.PI / 5; t += `<path d="M${c + Math.cos(a) * rad * .55} ${c + Math.sin(a) * rad * .55}L${c + Math.cos(a) * rad * .8} ${c + Math.sin(a) * rad * .8}" stroke="#232428" stroke-width="1.2" stroke-linecap="round" opacity=".5"/>`; }
       g = `<circle cx="${c}" cy="${c}" r="${rad}" fill="${col}" opacity=".18"/>` + halo(`<circle cx="${c}" cy="${c}" r="${rad}" fill="none"/>`) + (rad > 10 ? t : '');
+    } else if (st.brush === 'fine') {
+      g = halo(`<circle cx="${c}" cy="${c}" r="${Math.max(2, rad)}" fill="${col}"/>`) + `<circle cx="${c}" cy="${c}" r="${Math.max(6, rad + 5)}" fill="none" stroke="#232428" stroke-width="1" opacity=".35"/>`;
     } else if (st.brush === 'marker') {
       const rr = `x="${c - rad}" y="${c - rad * .36}" width="${rad * 2}" height="${rad * .72}" rx="${rad * .18}" transform="rotate(-36 ${c} ${c})"`;
       g = `<rect ${rr} fill="${col}" opacity=".25"/>` + halo(`<rect ${rr} fill="none"/>`);
