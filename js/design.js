@@ -1,11 +1,11 @@
 // 번호 도안 엔진
 // 색 인덱스 지도(그리드) → 영역 분리 · 잔조각 병합 → 벡터 선화 + 번호 위치
-import { hexRgb } from './paper.js';
+import { hexRgb } from './paper.js?v=4';
 
 export const DETAIL = [
-  { grid: 440, k: 10, minFrac: 0.0016 },
-  { grid: 600, k: 14, minFrac: 0.0008 },
-  { grid: 760, k: 20, minFrac: 0.00035 },
+  { grid: 480, k: 10, minFrac: 0.0010 },
+  { grid: 640, k: 14, minFrac: 0.00042 },
+  { grid: 800, k: 20, minFrac: 0.00016 },
 ];
 
 /* ---------------- 공통 파이프라인 ---------------- */
@@ -231,17 +231,27 @@ export async function imageToDesign(source, detail = 1) {
   const gw = asp >= 1 ? det.grid : Math.round(det.grid * asp), gh = asp >= 1 ? Math.round(det.grid / asp) : det.grid;
 
   // 단계적 축소 (부드럽게)
+  // 큰 사진은 먼저 적당한 크기로 한 번에 줄이고(메모리 절약), 이후 반씩 단계 축소
   let src = source, cw = iw, ch = ih;
+  const temps = [];
+  const pre = Math.min(1, (gw * 4) / cw);
+  if (pre < 1) {
+    const c = document.createElement('canvas'); c.width = Math.max(1, Math.round(cw * pre)); c.height = Math.max(1, Math.round(ch * pre));
+    const x = c.getContext('2d'); x.imageSmoothingQuality = 'high'; x.drawImage(src, 0, 0, c.width, c.height);
+    temps.push(c); src = c; cw = c.width; ch = c.height;
+  }
   while (cw / 2 > gw * 1.5) {
     const c = document.createElement('canvas'); c.width = Math.round(cw / 2); c.height = Math.round(ch / 2);
     const x = c.getContext('2d'); x.imageSmoothingQuality = 'high'; x.drawImage(src, 0, 0, c.width, c.height);
-    src = c; cw = c.width; ch = c.height;
+    temps.push(c); src = c; cw = c.width; ch = c.height;
   }
   const cv = document.createElement('canvas'); cv.width = gw; cv.height = gh;
   const cx = cv.getContext('2d', { willReadFrequently: true });
   cx.fillStyle = '#fff'; cx.fillRect(0, 0, gw, gh);
   cx.imageSmoothingQuality = 'high'; cx.drawImage(src, 0, 0, gw, gh);
   const px = cx.getImageData(0, 0, gw, gh).data;
+  for (const t of temps) t.width = t.height = 0;
+  cv.width = cv.height = 0;
   const N = gw * gh;
 
   // Lab 변환 + 가벼운 블러
@@ -447,6 +457,7 @@ export function sceneDesign(seed = Date.now()) {
     const a = m.getImageData(bx, by, bw, bh).data;
     for (let y = 0; y < bh; y++) for (let x = 0; x < bw; x++) if (a[(y * bw + x) * 4 + 3] >= 128) idx[(by + y) * gw + bx + x] = sh.color;
   }
+  mc.width = mc.height = 0;
   return buildDesign({ idx, gw, gh, palette: SCENE_PAL, w: W, h: H, minArea: 20, extra: ex.join(''), kind: 'scene' });
 }
 

@@ -73,14 +73,14 @@ export function paper() {
 // 색연필: 압력 단계별로 '종이 봉우리에만 묻는' 패턴
 const grainCache = new Map();
 export function pencilPatterns(ctx, hex, scale, levels = 6) {
-  const key = hex + '|' + scale;
+  const key = hex + '|' + scale + '|' + levels;
   if (grainCache.has(key)) return grainCache.get(key);
   const { tooth, size } = paper();
   const [r, g, b] = hexRgb(hex);
   const pats = [];
   for (let L = 0; L < levels; L++) {
     const p = (L + 1) / levels;               // 0..1 압력
-    const thr = 0.78 - p * 0.62;              // 높은 압력 → 골짜기까지 묻음
+    const thr = 0.84 - p * 0.68;              // 높은 압력 → 골짜기까지 묻음
     const cv = document.createElement('canvas'); cv.width = cv.height = size;
     const c = cv.getContext('2d'), im = c.createImageData(size, size), d = im.data;
     for (let i = 0; i < tooth.length; i++) {
@@ -92,7 +92,7 @@ export function pencilPatterns(ctx, hex, scale, levels = 6) {
     pat.setTransform(new DOMMatrix().scale(scale));
     pats.push(pat);
   }
-  if (grainCache.size > 6) grainCache.delete(grainCache.keys().next().value);
+  if (grainCache.size > 3) grainCache.delete(grainCache.keys().next().value);
   grainCache.set(key, pats);
   return pats;
 }

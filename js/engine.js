@@ -1,5 +1,5 @@
 // 드로잉 엔진: 스탬프 방식 브러시 + 획 단위 되돌리기
-import { pencilPatterns, blotPattern, hexRgb } from './paper.js';
+import { pencilPatterns, blotPattern, hexRgb } from './paper.js?v=4';
 
 export const BRUSHES = [['pencil', '색연필'], ['oil', '유화'], ['marker', '마커'], ['wc', '수채화'], ['eraser', '지우개']];
 
@@ -35,7 +35,7 @@ export class Painter {
 
   setup(w, h) {
     this.w = w; this.h = h;
-    this.k = Math.min(1.25, Math.sqrt(6.2e6 / (w * h)));
+    this.k = Math.min(1.2, Math.sqrt(4.6e6 / (w * h)));
     const W = Math.round(w * this.k), H = Math.round(h * this.k);
     for (const c of [this.paint, this.live, this.backup]) { c.width = W; c.height = H; }
     for (const c of [this.paint, this.live]) { c.style.width = w + 'px'; c.style.height = h + 'px'; }
@@ -58,7 +58,7 @@ export class Painter {
     const brush = o.brush;
     this.s = {
       brush, color: o.color, op: o.opacity, D: diameter(o.size, brush) * this.k,
-      x: x * this.k, y: y * this.k, sx: x * this.k, sy: y * this.k, ps: this.autoPressure(pressure, isPen),
+      x: x * this.k, y: y * this.k, sx: x * this.k, sy: y * this.k, ps: this.autoPressure(pressure, isPen, brush),
       isPen, carry: 0, travel: 0, ang: 0,
       x0: Infinity, y0: Infinity, x1: -Infinity, y1: -Infinity,
     };
@@ -71,7 +71,7 @@ export class Painter {
       const cfg = CFG[brush];
       this.live.style.opacity = String(cfg.alpha * s.op);
       this.live.style.mixBlendMode = cfg.blend;
-      if (brush === 'pencil') s.pats = pencilPatterns(this.lc, o.color, this.k);
+      if (brush === 'pencil') s.pats = pencilPatterns(this.lc, o.color, this.k, 8);
       if (brush === 'oil') {
         let seed = Math.random() * 1e9 | 0; const rnd = () => (seed = (seed * 16807) % 2147483647) / 2147483647;
         const n = 11;
@@ -85,8 +85,13 @@ export class Painter {
     this.stamp(s.x, s.y);
   }
 
-  autoPressure(p, isPen) {
-    // 실제 필압은 살짝만 반영 → 대부분 0.75~1 사이로 안정
+  autoPressure(p, isPen, brush) {
+    if (brush === 'pencil') {
+      // 색연필: 필압을 제대로 반영 (살살 → 연하고 가늘게, 꾹 → 진하고 굵게)
+      if (!isPen || !(p > 0)) return .6;
+      return Math.min(1, .06 + .94 * Math.pow(Math.min(1, p / .85), .85));
+    }
+    // 나머지: 살짝만 반영 → 대부분 0.75~1 사이로 안정
     if (!isPen || !(p > 0)) return .82;
     return .62 + .38 * Math.pow(Math.min(1, p / .6), .7);
   }
@@ -96,7 +101,7 @@ export class Painter {
     const tx = x * this.k, ty = y * this.k;
     // 손떨림 보정
     s.sx += (tx - s.sx) * .6; s.sy += (ty - s.sy) * .6;
-    s.ps += (this.autoPressure(pressure, s.isPen) - s.ps) * .18;
+    s.ps += (this.autoPressure(pressure, s.isPen, s.brush) - s.ps) * (s.brush === 'pencil' ? .3 : .18);
     const dx = s.sx - s.x, dy = s.sy - s.y, len = Math.hypot(dx, dy);
     if (len < .01) return;
     s.ang = Math.atan2(dy, dx);
@@ -118,7 +123,7 @@ export class Painter {
     const s = this.s, taper = Math.min(1, .4 + .6 * s.travel / (s.D * 1.2));
     const base = s.D / 2;
     switch (s.brush) {
-      case 'pencil': return base * (.8 + .2 * s.ps) * taper;
+      case 'pencil': return base * (.5 + .5 * s.ps) * taper;
       case 'oil': return base * (.72 + .28 * s.ps) * Math.min(1, .7 + .3 * taper);
       case 'marker': return base * Math.min(1, .85 + .15 * taper);
       case 'wc': return base * (.7 + .3 * s.ps) * taper;
@@ -134,8 +139,8 @@ export class Painter {
     c.save();
     switch (s.brush) {
       case 'pencil': {
-        const lv = Math.max(0, Math.min(s.pats.length - 1, Math.round((s.ps - .55) / .45 * (s.pats.length - 1))));
-        c.globalAlpha = .3; c.fillStyle = s.pats[lv];
+        const lv = Math.max(0, Math.min(s.pats.length - 1, Math.round(s.ps * (s.pats.length - 1))));
+        c.globalAlpha = .1 + .32 * s.ps; c.fillStyle = s.pats[lv];
         c.beginPath(); c.arc(x, y, r, 0, Math.PI * 2); c.fill();
         break;
       }
@@ -207,6 +212,7 @@ export class Painter {
       b.globalCompositeOperation = 'destination-in'; b.fillStyle = pat; b.fillRect(0, 0, bw, bh);
       pat.setTransform(new DOMMatrix().scale(this.k * 1.6));
       p.save(); p.globalCompositeOperation = comp; p.globalAlpha = cfg.alpha * s.op; p.drawImage(body, bx, by); p.restore();
+      body.width = body.height = 0;
       if (canFilter) {
         const rim = document.createElement('canvas'); rim.width = bw; rim.height = bh;
         const rc = rim.getContext('2d');
@@ -215,6 +221,7 @@ export class Painter {
         rc.filter = `blur(${Math.max(2, s.D * .07)}px)`;
         rc.drawImage(this.live, bx, by, bw, bh, 0, 0, bw, bh);
         p.save(); p.globalCompositeOperation = comp; p.globalAlpha = .55 * s.op; p.drawImage(rim, bx, by); p.restore();
+        rim.width = rim.height = 0;
       }
     } else {
       p.save(); p.globalCompositeOperation = comp; p.globalAlpha = cfg.alpha * s.op;

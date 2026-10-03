@@ -1,8 +1,8 @@
-import { paper, TILE } from './paper.js';
-import { Painter, BRUSHES, diameter } from './engine.js';
-import { sceneDesign, imageToDesign, hexLum } from './design.js';
-import * as store from './storage.js';
-import { generateImage, DEFAULT_MODEL } from './ai.js';
+import { paper, TILE } from './paper.js?v=4';
+import { Painter, BRUSHES, diameter } from './engine.js?v=4';
+import { sceneDesign, imageToDesign, hexLum } from './design.js?v=4';
+import * as store from './storage.js?v=4';
+import { generateImage, DEFAULT_MODEL } from './ai.js?v=4';
 
 const $ = id => document.getElementById(id);
 const sheet = $('sheet'), world = $('world'), paintCv = $('paint'), liveCv = $('live'), svg = $('lineart');
@@ -62,13 +62,28 @@ async function applyDesign(d, paintBlob, { fresh = false } = {}) {
   numRegions = d.palette.map(() => []);
   d.regionNum.forEach((k, r) => numRegions[k].push(r));
 
+  buildPreview(d);
   st.num = Math.min(Math.max(1, P.get('num', 1)), d.palette.length);
   buildPalette();
-  fitView(true);
+  { const W = sheet.clientWidth, H = sheet.clientHeight, r = Math.max(W / d.w, H / d.h) / Math.min(W / d.w, H / d.h); fitView(r < 1.25); }
   coverage(null);
   setNum(st.num);
   drawMini();
   if (fresh) { await store.set('design', d); await saveNow(); }
+}
+
+/* ================= 완성 미리보기 ================= */
+const prevCv = document.createElement('canvas');
+function buildPreview(d) {
+  prevCv.width = d.gw; prevCv.height = d.gh;
+  const c = prevCv.getContext('2d'), im = c.createImageData(d.gw, d.gh), px = im.data;
+  const rgb = d.palette.map(h => { const v = parseInt(h.slice(1), 16); return [v >> 16, (v >> 8) & 255, v & 255]; });
+  for (let i = 0; i < d.reg.length; i++) { const k = rgb[d.regionNum[d.reg[i]]]; px[i * 4] = k[0]; px[i * 4 + 1] = k[1]; px[i * 4 + 2] = k[2]; px[i * 4 + 3] = 255; }
+  c.putImageData(im, 0, 0);
+  const ref = $('ref'), sc = Math.min(1, 1600 / d.w);
+  ref.width = Math.round(d.w * sc); ref.height = Math.round(d.h * sc);
+  ref.style.width = d.w + 'px'; ref.style.height = d.h + 'px';
+  const rc = ref.getContext('2d'); rc.imageSmoothingQuality = 'high'; rc.drawImage(prevCv, 0, 0, ref.width, ref.height);
 }
 
 /* ================= 칠함 판정 (번호 숨김) ================= */
@@ -229,7 +244,14 @@ new ResizeObserver(() => {
   drawMini();
 }).observe(sheet);
 
-$('navBtn').onclick = () => {
+let refT = 0, refShown = false;
+const navBtn = $('navBtn');
+navBtn.addEventListener('pointerdown', () => { refShown = false; clearTimeout(refT); refT = setTimeout(() => { refShown = true; $('ref').classList.add('show'); }, 280); });
+const refEnd = () => { clearTimeout(refT); $('ref').classList.remove('show'); };
+navBtn.addEventListener('pointerup', refEnd); navBtn.addEventListener('pointercancel', refEnd); navBtn.addEventListener('pointerleave', refEnd);
+navBtn.addEventListener('contextmenu', e => e.preventDefault());
+navBtn.onclick = () => {
+  if (refShown) { refShown = false; return; }
   const v = st.view;
   if (Math.abs(v.s - v.fit) > .001) { st.prevView = { ...v }; fitView(); }
   else if (st.prevView) { st.view = { ...st.prevView, fit: v.fit }; clampView(); applyView(); }
@@ -245,6 +267,7 @@ function drawMini() {
   const s = Math.min(W / d.w, H / d.h); mm = { s, ox: (W - d.w * s) / 2, oy: (H - d.h * s) / 2 };
   mctx.setTransform(dpr, 0, 0, dpr, 0, 0);
   mctx.fillStyle = '#FCFCFC'; mctx.fillRect(0, 0, W, H);
+  mctx.globalAlpha = .45; mctx.drawImage(prevCv, mm.ox, mm.oy, d.w * s, d.h * s); mctx.globalAlpha = 1;
   mctx.drawImage(paintCv, mm.ox, mm.oy, d.w * s, d.h * s);
   mctx.save(); mctx.translate(mm.ox, mm.oy); mctx.scale(s, s);
   mctx.strokeStyle = '#2A2A2D'; mctx.lineWidth = 1 / s * .6; mctx.stroke(new Path2D(d.path));
@@ -457,8 +480,9 @@ $('settingsBtn').onclick = () => {
   show($('setBox'), on); show($('choices'), !on && $('aiBox').hidden); if (on) show($('aiBox'), false);
   $('apiKey').value = P.get('apiKey', ''); $('apiModel').value = P.get('model', DEFAULT_MODEL);
 };
+$('keyEye').onclick = () => $('apiKey').classList.toggle('masked');
 $('setSave').onclick = () => {
-  P.set('apiKey', $('apiKey').value.trim()); P.set('model', $('apiModel').value.trim() || DEFAULT_MODEL);
+  P.set('apiKey', $('apiKey').value.replace(/\s+/g, '')); P.set('model', $('apiModel').value.trim() || DEFAULT_MODEL);
   show($('setBox'), false); show($('choices'), true); toast('저장했어요');
 };
 $('aiChoice').onclick = () => {
@@ -467,31 +491,51 @@ $('aiChoice').onclick = () => {
 };
 $('aiBack').onclick = () => { show($('aiBox'), false); show($('choices'), true); };
 
+const nextFrame = () => new Promise(r => requestAnimationFrame(() => requestAnimationFrame(r)));
+async function decodeImage(blob) {
+  // 1) ImageBitmap  2) <img> (HEIC 등은 Safari가 <img>로만 읽는 경우가 있음)
+  // 큰 사진은 디코딩하면서 바로 줄여 메모리를 아낌
+  try { const b = await createImageBitmap(blob, { imageOrientation: 'from-image', resizeWidth: 2048, resizeQuality: 'high' }); if (b.width > 0 && b.height > 0) return b; } catch {}
+  try { return await createImageBitmap(blob, { imageOrientation: 'from-image' }); } catch {}
+  try { return await createImageBitmap(blob); } catch {}
+  const url = URL.createObjectURL(blob);
+  try {
+    const img = new Image(); img.decoding = 'async'; img.src = url;
+    await (img.decode ? img.decode() : new Promise((ok, no) => { img.onload = ok; img.onerror = no; }));
+    if (!img.naturalWidth) throw new Error();
+    return img;
+  } catch {
+    throw new Error(/hei[cf]/i.test(blob.type || blob.name || '') ? 'HEIC 사진을 읽지 못했어요. JPEG로 바꿔서 올려주세요' : '이미지를 읽지 못했어요');
+  } finally { setTimeout(() => URL.revokeObjectURL(url), 5000); }
+}
 async function fromBlob(blob) {
   show($('busy'), true);
+  P.set('processing', Date.now());
+  await nextFrame();
   try {
-    const bmp = await createImageBitmap(blob);
-    await new Promise(r => setTimeout(r, 30));
-    const d = await imageToDesign(bmp, st.detail);
-    bmp.close && bmp.close();
+    const src = await decodeImage(blob);
+    await nextFrame();
+    const d = await imageToDesign(src, st.detail);
+    if (src.close) src.close();
     await applyDesign(d, null, { fresh: true });
     closeModal();
-  } catch (err) { console.error(err); toast(err.message || '이미지를 처리하지 못했어요'); }
-  finally { show($('busy'), false); }
+  } catch (err) { console.error(err); toast(err.message || '이미지를 처리하지 못했어요', 4000); }
+  finally { P.set('processing', 0); show($('busy'), false); $('fileInput').value = ''; }
 }
-$('fileInput').onchange = e => { const f = e.target.files[0]; if (f) fromBlob(f); };
+const onFile = e => { const f = e.target.files && e.target.files[0]; if (f) fromBlob(f); };
+$('fileInput').addEventListener('change', onFile);
 $('aiGo').onclick = async () => {
   const prompt = $('prompt').value.trim(); if (!prompt) { $('prompt').focus(); return; }
   show($('busy'), true);
   try {
     const blob = await generateImage(prompt, P.get('apiKey', ''), P.get('model', DEFAULT_MODEL));
     await fromBlob(blob);
-  } catch (err) { console.error(err); toast(err.message); show($('busy'), false); }
+  } catch (err) { console.error(err); toast(err.message, 4000); show($('busy'), false); }
 };
 
 /* ================= 기타 ================= */
 let toastT = 0;
-function toast(msg) { const t = $('toast'); t.textContent = msg; t.classList.add('show'); clearTimeout(toastT); toastT = setTimeout(() => t.classList.remove('show'), 1800); }
+function toast(msg, ms = 1800) { const t = $('toast'); t.textContent = msg; t.classList.add('show'); clearTimeout(toastT); toastT = setTimeout(() => t.classList.remove('show'), ms); }
 
 /* ================= 시작 ================= */
 (async function init() {
@@ -504,7 +548,10 @@ function toast(msg) { const t = $('toast'); t.textContent = msg; t.classList.add
     const p = await store.get('paint');
     if (d && p && p.id === d.id) paint = p.blob;
   } catch (err) { console.warn(err); }
-  if (d) await applyDesign(d, paint);
+  const crashed = Date.now() - P.get('processing', 0) < 10 * 60 * 1000;
+  P.set('processing', 0);
+  if (d && d.reg && d.labels) await applyDesign(d, paint);
   else await applyDesign(sceneDesign(), null, { fresh: true });
+  if (crashed) toast('사진이 너무 커서 처리 중 다시 시작됐어요. 다른 사진이나 \'간단\'으로 시도해 주세요', 5000);
   window.__app = { st, painter, applyDesign, sceneDesign, saveNow, coverage };
 })();

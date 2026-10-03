@@ -8,9 +8,10 @@ export async function generateImage(prompt, key, model = DEFAULT_MODEL) {
     'Clean flat-color illustration with clearly separated solid color areas and bold simple shapes. ' +
     'No gradients, no shading noise, no outlines, no text, no border, no frame. ' +
     'Many distinct objects across the whole scene, suitable for a paint-by-number coloring page.';
-  const res = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(model)}:generateContent`, {
+  if (/[^\x21-\x7e]/.test(key)) throw new Error('API 키에 영문·숫자 외의 글자가 들어 있어요');
+  const res = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(model)}:generateContent?key=${encodeURIComponent(key)}`, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json', 'x-goog-api-key': key },
+    headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({
       contents: [{ parts: [{ text }] }],
       generationConfig: { responseModalities: ['TEXT', 'IMAGE'] },
